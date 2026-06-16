@@ -146,4 +146,41 @@ router.post('/vendors', async (req: any, res) => {
   }
 });
 
+// Delete a client payment (collection)
+router.delete('/clients/:id', async (req: any, res) => {
+  try {
+    const { id } = req.params;
+    const orgId = await getOrgId(req);
+    if (!orgId) return res.status(403).json({ error: 'No organization linked' });
+
+    const existing = await getPrisma().payment.findFirst({ where: { id, orgId } });
+    if (!existing) return res.status(404).json({ error: 'Payment not found' });
+
+    await getPrisma().payment.delete({ where: { id } });
+    res.status(204).send();
+  } catch (error) {
+    console.error(`[API ERROR] Failed to delete collection ${req.params.id}:`, error);
+    res.status(500).json({ error: 'Failed to delete collection' });
+  }
+});
+
+// Delete a vendor payment (payout)
+router.delete('/vendors/:id', async (req: any, res) => {
+  try {
+    const { id } = req.params;
+    const orgId = await getOrgId(req);
+    if (!orgId) return res.status(403).json({ error: 'No organization linked' });
+
+    const existing = await getPrisma().vendorPayment.findFirst({ where: { id, orgId } });
+    if (!existing) return res.status(404).json({ error: 'Payout not found' });
+
+    await getPrisma().vendorPayment.delete({ where: { id } });
+    res.status(204).send();
+  } catch (error) {
+    console.error(`[API ERROR] Failed to delete payout ${req.params.id}:`, error);
+    res.status(500).json({ error: 'Failed to delete payout' });
+  }
+});
+
 export default router;
+

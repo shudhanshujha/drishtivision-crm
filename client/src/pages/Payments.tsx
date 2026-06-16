@@ -1,9 +1,8 @@
 import React, { useState } from 'react';
 import { 
   CreditCard, ArrowUpRight, ArrowDownRight, 
-  Search, Filter, CheckCircle2, Clock, 
-  Plus, Download, IndianRupee, Building, Truck, X,
-  Calendar, CreditCard as MethodIcon, Loader2
+  Search, Plus, Building, Truck, X,
+  Calendar, Loader2, Trash2, AlertTriangle
 } from 'lucide-react';
 import api from '../lib/axios';
 import { format } from 'date-fns';
@@ -14,6 +13,8 @@ const Payments: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'collections' | 'payouts'>('collections');
   const [searchTerm, setSearchTerm] = useState('');
   const [showModal, setShowModal] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<any | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const [collections, setCollections] = useState<any[]>([]);
   const [payouts, setPayouts] = useState<any[]>([]);
@@ -97,6 +98,25 @@ const Payments: React.FC = () => {
     }
   };
 
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+    try {
+      setIsDeleting(true);
+      const endpoint = activeTab === 'collections'
+        ? `/payments/clients/${deleteTarget.id}`
+        : `/payments/vendors/${deleteTarget.id}`;
+      await api.delete(endpoint);
+      toast.success(`${activeTab === 'collections' ? 'Collection' : 'Payout'} deleted`);
+      setDeleteTarget(null);
+      fetchPayments();
+      fetchSummary();
+    } catch (error: any) {
+      toast.error(error.response?.data?.error || 'Failed to delete');
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   const currentData = (activeTab === 'collections' ? collections : payouts).filter(p => 
     (p.client?.name || p.vendor?.vendorName || p.client || p.vendor || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
     (p.invoice?.invoiceNumber || p.purpose || p.inv || p.type || '').toLowerCase().includes(searchTerm.toLowerCase())
@@ -172,11 +192,14 @@ const Payments: React.FC = () => {
                      <th className="px-6 py-4">Method</th>
                      <th className="px-6 py-4 text-center">Status</th>
                      <th className="px-6 py-4 text-right">Settlement Amount</th>
+                     <th className="px-6 py-4 w-12"></th>
                   </tr>
                </thead>
                 <tbody className="divide-y divide-border">
                    {isLoading ? (
-                      <tr><td colSpan={5} className="py-10 text-center"><Loader2 className="animate-spin mx-auto text-accent-orange" /></td></tr>
+                      <tr><td colSpan={6} className="py-10 text-center"><Loader2 className="animate-spin mx-auto text-accent-orange" /></td></tr>
+                   ) : currentData.length === 0 ? (
+                      <tr><td colSpan={6} className="py-14 text-center text-text-muted text-[11px] uppercase font-black tracking-widest italic opacity-50">No records found</td></tr>
                    ) : currentData.map((p) => (
                       <tr key={p.id} className="hover:bg-bg-surface-2 transition-colors cursor-pointer group">
                          <td className="px-6 py-4 text-[12px] font-medium text-text-muted">{format(new Date(p.paymentDate || p.date), 'dd MMM yyyy')}</td>
@@ -187,18 +210,27 @@ const Payments: React.FC = () => {
                                </div>
                                <div>
                                   <div className="text-[13px] font-bold text-text-primary group-hover:text-accent-orange transition-colors">{p.client?.name || p.vendor?.vendorName || p.client || p.vendor}</div>
-                                  <div className="text-[10px] text-text-muted font-bold mt-0.5">{p.invoice?.invoiceNumber || p.purpose || p.inv || p.type}</div>
+                                  <div className="text-[10px] text-text-muted font-bold mt-0.5">{p.invoice?.invoiceNumber || p.purpose || p.referenceNumber || '—'}</div>
                                </div>
                             </div>
                          </td>
                          <td className="px-6 py-4 text-[11px] font-bold text-text-primary">{p.paymentMode || p.method}</td>
                          <td className="px-6 py-4 text-center">
-                            <span className={`status-tag ${p.status === 'Settled' || p.status === 'Paid' || activeTab === 'collections' ? 'bg-success' : 'bg-warning'}`}>
-                               {p.status || 'Settled'}
+                            <span className={`status-tag ${activeTab === 'collections' ? 'bg-success' : 'bg-warning'}`}>
+                               {activeTab === 'collections' ? 'Received' : 'Paid Out'}
                             </span>
                          </td>
                          <td className="px-6 py-4 text-right">
-                            <div className={`text-[14px] font-black ${activeTab === 'collections' ? 'text-text-primary' : 'text-danger'}`}>₹{p.amount?.toLocaleString()}</div>
+                            <div className={`text-[14px] font-black ${activeTab === 'collections' ? 'text-success' : 'text-danger'}`}>₹{p.amount?.toLocaleString()}</div>
+                         </td>
+                         <td className="px-6 py-4 text-center">
+                            <button
+                              onClick={(e) => { e.stopPropagation(); setDeleteTarget(p); }}
+                              className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 rounded-lg hover:bg-danger/10 hover:text-danger text-text-muted"
+                              title="Delete"
+                            >
+                              <Trash2 size={14} />
+                            </button>
                          </td>
                       </tr>
                    ))}
@@ -270,6 +302,65 @@ const Payments: React.FC = () => {
               </div>
               </form>
            </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {deleteTarget && (
+        <div
+          className="fixed inset-0 bg-bg-primary/90 backdrop-blur-md z-[200] flex items-center justify-center p-4"
+          onClick={() => !isDeleting && setDeleteTarget(null)}
+        >
+          <div
+            className="bg-bg-surface border border-danger/30 rounded-3xl w-full max-w-md shadow-2xl shadow-danger/20 overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-6 border-b border-border flex justify-between items-center bg-bg-surface-2">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-danger/10 text-danger rounded-2xl flex items-center justify-center">
+                  <AlertTriangle size={20} />
+                </div>
+                <h2 className="text-[16px] font-black text-text-primary uppercase tracking-tight">
+                  Delete {activeTab === 'collections' ? 'Collection' : 'Payout'}
+                </h2>
+              </div>
+              <button onClick={() => setDeleteTarget(null)} disabled={isDeleting} className="p-2 hover:bg-bg-surface border border-transparent hover:border-border rounded-xl transition-colors">
+                <X size={18} />
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div className="bg-danger/5 border border-danger/20 rounded-2xl p-4 space-y-1">
+                <p className="text-[14px] font-black text-text-primary">
+                  {deleteTarget.client?.name || deleteTarget.vendor?.vendorName || '—'}
+                </p>
+                <p className="text-[12px] font-black text-danger">₹{deleteTarget.amount?.toLocaleString()}</p>
+                <p className="text-[10px] text-text-muted">
+                  {format(new Date(deleteTarget.paymentDate || deleteTarget.createdAt), 'dd MMM yyyy')}
+                  {deleteTarget.invoice?.invoiceNumber ? ` · ${deleteTarget.invoice.invoiceNumber}` : ''}
+                  {deleteTarget.purpose ? ` · ${deleteTarget.purpose}` : ''}
+                  {deleteTarget.paymentMode ? ` · ${deleteTarget.paymentMode}` : ''}
+                </p>
+              </div>
+              <p className="text-[11px] text-danger font-bold uppercase tracking-wide">⚠ This action cannot be undone.</p>
+            </div>
+            <div className="p-6 pt-0 flex gap-3">
+              <button
+                onClick={() => setDeleteTarget(null)}
+                disabled={isDeleting}
+                className="flex-1 btn-outline py-3 text-[12px] font-black uppercase"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDelete}
+                disabled={isDeleting}
+                className="flex-1 bg-danger text-white rounded-xl py-3 text-[12px] font-black uppercase shadow-lg shadow-danger/30 hover:brightness-110 transition-all disabled:opacity-60 flex items-center justify-center gap-2"
+              >
+                {isDeleting ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+                {isDeleting ? 'Deleting...' : 'Yes, Delete'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
