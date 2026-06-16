@@ -22,6 +22,7 @@ const Settings: React.FC = () => {
   const [userList, setUserList] = useState<any[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
   const [savingOrg, setSavingOrg] = useState(false);
+  const [cleaningDemo, setCleaningDemo] = useState(false);
   const currentUser = JSON.parse(localStorage.getItem('dv_user') || '{}');
   const isAdmin = currentUser.role === 'admin' || currentUser.role === 'super_admin';
 
@@ -171,6 +172,19 @@ const Settings: React.FC = () => {
       title: 'DRISHTIVISION SYSTEM BACKUP'
     });
     toast.success(`Full system backup generated as ${format.toUpperCase()}`);
+  };
+
+  const handleCleanDemoData = async () => {
+    if (!window.confirm('This will permanently remove placeholder/demo data (Acme Corp, Main Office, Summer Launch, INV-2026-001) from your organization. Your real data will not be touched. Continue?')) return;
+    try {
+      setCleaningDemo(true);
+      const res = await api.delete('/auth/demo-data');
+      toast.success(res.data.message);
+    } catch (err: any) {
+      toast.error(err.response?.data?.error || 'Failed to remove demo data');
+    } finally {
+      setCleaningDemo(false);
+    }
   };
 
   return (
@@ -441,7 +455,7 @@ const Settings: React.FC = () => {
                    <Download className="text-accent-blue" />
                    <h2 className="text-lg font-bold">Data Sovereignty & Backup</h2>
                 </div>
-                <div className="grid grid-cols-1 max-w-sm mx-auto">
+                <div className="grid grid-cols-1 gap-6 max-w-sm mx-auto">
                    <div className="p-6 bg-bg-surface-2 border border-border rounded-2xl flex flex-col items-center text-center gap-4 hover:border-success transition-all cursor-pointer group" onClick={() => handleSystemBackup('excel')}>
                       <div className="w-16 h-16 bg-success/10 text-success rounded-full flex items-center justify-center group-hover:scale-110 transition-transform"><FileSpreadsheet size={32} /></div>
                       <div>
@@ -451,6 +465,33 @@ const Settings: React.FC = () => {
                       <button className="btn-outline w-full py-2 text-[11px]">Generate Excel</button>
                    </div>
                 </div>
+
+                {/* Remove Demo Data */}
+                {isAdmin && (
+                  <div className="border-t border-border pt-6">
+                    <h3 className="text-[11px] font-black text-text-muted uppercase tracking-widest mb-4 flex items-center gap-2">
+                      <Trash2 size={14} className="text-danger" /> Placeholder Data Cleanup
+                    </h3>
+                    <div className="p-5 bg-danger/5 border border-danger/20 rounded-2xl flex items-start justify-between gap-6">
+                      <div>
+                        <p className="text-[13px] font-bold text-text-primary">Remove Demo / Seed Data</p>
+                        <p className="text-[11px] text-text-muted mt-1 leading-relaxed">
+                          Deletes placeholder records created during initial setup:<br />
+                          <span className="font-mono text-[10px] text-danger/70">Acme Corp · Main Office · Summer Launch · INV-2026-001</span>
+                        </p>
+                        <p className="text-[10px] text-text-muted mt-2 uppercase font-bold tracking-wide">⚠ Only demo records will be removed. Real data is safe.</p>
+                      </div>
+                      <button
+                        onClick={handleCleanDemoData}
+                        disabled={cleaningDemo}
+                        className="shrink-0 bg-danger text-white px-5 py-2.5 rounded-xl text-[11px] font-black uppercase tracking-wider shadow-lg shadow-danger/20 hover:brightness-110 transition-all disabled:opacity-60 flex items-center gap-2"
+                      >
+                        {cleaningDemo ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+                        {cleaningDemo ? 'Cleaning...' : 'Remove Demo Data'}
+                      </button>
+                    </div>
+                  </div>
+                )}
              </div>
           )}
 

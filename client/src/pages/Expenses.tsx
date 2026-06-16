@@ -1,10 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import api from '../lib/axios';
 import { 
-  Plus, Search, Filter, Calendar, CreditCard, 
-  Trash2, Download, TrendingDown, Receipt, 
-  ArrowRight, X, Loader2, Tag, Briefcase, 
-  Plane, Wrench, Users, MoreHorizontal
+  Plus, Search, Filter,
+  Trash2, TrendingDown, Receipt, 
+  X, Loader2, Tag, Briefcase, 
+  Plane, Wrench, Users, AlertTriangle
 } from 'lucide-react';
 import ExportButton from '../components/ui/ExportButton';
 import toast from 'react-hot-toast';
@@ -15,6 +15,8 @@ const Expenses = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const [deleteTarget, setDeleteTarget] = useState<any | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [formData, setFormData] = useState({
     category: 'OFFICE',
     amount: '',
@@ -48,9 +50,25 @@ const Expenses = () => {
       });
       toast.success('Expense recorded');
       setShowModal(false);
+      setFormData({ category: 'OFFICE', amount: '', description: '', paymentMode: 'UPI' });
       fetchExpenses();
     } catch (e) {
       toast.error('Failed to save expense');
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+    try {
+      setIsDeleting(true);
+      await api.delete(`/expenses/${deleteTarget.id}`);
+      toast.success('Expense deleted');
+      setDeleteTarget(null);
+      fetchExpenses();
+    } catch (e) {
+      toast.error('Failed to delete expense');
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -126,11 +144,12 @@ const Expenses = () => {
               <th className="px-6 py-4">Reference / Description</th>
               <th className="px-6 py-4 text-center">Method</th>
               <th className="px-6 py-4 text-right">Debit Amount</th>
+              <th className="px-6 py-4 w-12"></th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
             {isLoading ? (
-              <tr><td colSpan={5} className="py-20 text-center"><Loader2 className="animate-spin mx-auto text-accent-orange" /></td></tr>
+              <tr><td colSpan={6} className="py-20 text-center"><Loader2 className="animate-spin mx-auto text-accent-orange" /></td></tr>
             ) : filteredExpenses.map((exp) => (
               <tr key={exp.id} className="hover:bg-bg-surface-2 transition-colors group cursor-pointer">
                 <td className="px-6 py-4 text-[12px] font-bold text-text-muted">{format(new Date(exp.date), 'dd MMM yyyy')}</td>
@@ -150,11 +169,20 @@ const Expenses = () => {
                 <td className="px-6 py-4 text-right">
                   <div className="text-[14px] font-black text-danger">- ₹{exp.amount.toLocaleString()}</div>
                 </td>
+                <td className="px-6 py-4 text-center">
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setDeleteTarget(exp); }}
+                    className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 rounded-lg hover:bg-danger/10 hover:text-danger text-text-muted"
+                    title="Delete expense"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </td>
               </tr>
             ))}
             {!isLoading && filteredExpenses.length === 0 && (
               <tr>
-                <td colSpan={5} className="py-20 text-center text-text-muted uppercase font-black text-[11px] tracking-widest italic opacity-50">Zero Outflow Recorded</td>
+                <td colSpan={6} className="py-20 text-center text-text-muted uppercase font-black text-[11px] tracking-widest italic opacity-50">Zero Outflow Recorded</td>
               </tr>
             )}
           </tbody>
@@ -230,6 +258,36 @@ const Expenses = () => {
                 <button type="submit" className="px-10 py-2.5 bg-danger text-white rounded-xl text-[12px] font-black uppercase tracking-widest shadow-xl shadow-danger/20">Confirm Debit</button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {deleteTarget && (
+        <div className="fixed inset-0 bg-bg-primary/90 backdrop-blur-md z-[200] flex items-center justify-center p-4" onClick={() => !isDeleting && setDeleteTarget(null)}>
+          <div className="bg-bg-surface border border-danger/30 rounded-3xl w-full max-w-md shadow-2xl shadow-danger/20 overflow-hidden" onClick={(e) => e.stopPropagation()}>
+            <div className="p-6 border-b border-border flex justify-between items-center bg-bg-surface-2">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-danger/10 text-danger rounded-2xl flex items-center justify-center"><AlertTriangle size={20} /></div>
+                <h2 className="text-[16px] font-black text-text-primary uppercase tracking-tight">Delete Expense</h2>
+              </div>
+              <button onClick={() => setDeleteTarget(null)} disabled={isDeleting} className="p-2 hover:bg-bg-surface border border-transparent hover:border-border rounded-xl transition-colors"><X size={18} /></button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div className="bg-danger/5 border border-danger/20 rounded-2xl p-4">
+                <p className="text-[14px] font-black text-text-primary">{deleteTarget.description || deleteTarget.category}</p>
+                <p className="text-[12px] text-danger font-black mt-1">₹{deleteTarget.amount?.toLocaleString()}</p>
+                <p className="text-[10px] text-text-muted mt-1">{format(new Date(deleteTarget.date), 'dd MMM yyyy')} · {deleteTarget.paymentMode}</p>
+              </div>
+              <p className="text-[11px] text-danger font-bold uppercase tracking-wide">⚠ This action cannot be undone.</p>
+            </div>
+            <div className="p-6 pt-0 flex gap-3">
+              <button onClick={() => setDeleteTarget(null)} disabled={isDeleting} className="flex-1 btn-outline py-3 text-[12px] font-black uppercase">Cancel</button>
+              <button onClick={handleDelete} disabled={isDeleting} className="flex-1 bg-danger text-white rounded-xl py-3 text-[12px] font-black uppercase shadow-lg shadow-danger/30 hover:brightness-110 transition-all disabled:opacity-60 flex items-center justify-center gap-2">
+                {isDeleting ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+                {isDeleting ? 'Deleting...' : 'Yes, Delete'}
+              </button>
+            </div>
           </div>
         </div>
       )}

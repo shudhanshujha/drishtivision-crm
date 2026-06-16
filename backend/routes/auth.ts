@@ -242,4 +242,128 @@ router.get('/users', authMiddleware, async (req: any, res) => {
   }
 });
 
+// DELETE demo/seed data (Admin only) - removes known placeholder records
+router.delete('/demo-data', authMiddleware, async (req: any, res) => {
+  try {
+    const orgId = await getOrgId(req);
+    if (!orgId) return res.status(403).json({ error: 'No organization linked' });
+
+    // Only admins can clean demo data
+    const profile = await getPrisma().profile.findUnique({ where: { id: req.user.id } });
+    if (!profile || !['admin', 'super_admin'].includes(profile.role)) {
+      return res.status(403).json({ error: 'Only administrators can remove demo data' });
+    }
+
+    const DEMO_CLIENT_NAMES = ['Acme Corp', 'acme corp'];
+    const DEMO_SITE_NAMES = ['Main Office'];
+    const DEMO_INVOICE_NUMBERS = ['INV-2026-001'];
+    const DEMO_CAMPAIGN_NAMES = ['Summer Launch'];
+
+    const deleted: Record<string, number> = {};
+
+    await getPrisma().$transaction(async (tx) => {
+      // Find and delete demo invoices (cascade: items, payments, files)
+      const demoInvoices = await tx.invoice.findMany({
+        where: { orgId, invoiceNumber: { in: DEMO_INVOICE_NUMBERS } },
+        select: { id: true }
+      });
+      for (const inv of demoInvoices) {
+        await tx.file.deleteMany({ where: { invoiceId: inv.id } });
+        await tx.payment.deleteMany({ where: { invoiceId: inv.id } });
+        await tx.invoiceItem.deleteMany({ where: { invoiceId: inv.id } });
+      }
+      if (demoInvoices.length > 0) {
+        await tx.invoice.deleteMany({ where: { orgId, invoiceNumber: { in: DEMO_INVOICE_NUMBERS } } });
+        deleted.invoices = demoInvoices.length;
+      }
+
+      // Find and delete demo campaigns (cascade: campaignSites, invoices, files)
+      const demoCampaigns = await tx.campaign.findMany({
+        where: { orgId, campaignName: { in: DEMO_CAMPAIGN_NAMES } },
+        select: { id: true, campaignName: true }
+      });
+      for (const camp of demoCampaigns) {
+        const campaignSites = await tx.campaignSite.findMany({ where: { campaignId: camp.id }, select: { id: true } });
+        for (const cs of campaignSites) {
+          await tx.file.deleteMany({ where: { campaignSiteId: cs.id } });
+        }
+        await tx.campaignSite.deleteMany({ where: { campaignId: camp.id } });
+        await tx.file.deleteMany({ where: { campaignId: camp.id } });
+        // Also delete invoices linked to this campaign
+        const campInvoices = await tx.invoice.findMany({ where: { campaignId: camp.id }, select: { id: true } });
+        for (const inv of campInvoices) {
+          await tx.file.deleteMany({ where: { invoiceId: inv.id } });
+          await tx.payment.deleteMany({ where: { invoiceId: inv.id } });
+          await tx.invoiceItem.deleteMany({ where: { invoiceId: inv.id } });
+        }
+        await tx.invoice.deleteMany({ where: { campaignId: camp.id } });
+      }
+      if (demoCampaigns.length > 0) {
+        await tx.campaign.deleteMany({ where: { orgId, campaignName: { in: DEMO_CAMPAIGN_NAMES } } });
+        deleted.campaigns = demoCampaigns.length;
+      }
+
+      // Find and delete demo clients (cascade everything)
+      const demoClients = await tx.client.findMany({
+        where: { orgId, name: { in: DEMO_CLIENT_NAMES, mode: 'insensitive' } },
+        select: { id: true }
+      });
+      for (const client of demoClients) {
+        await tx.file.deleteMany({ where: { clientId: client.id } });
+        await tx.payment.deleteMany({ where: { clientId: client.id } });
+        await tx.quotation.deleteMany({ where: { clientId: client.id } });
+        const clientCampaigns = await tx.campaign.findMany({ where: { clientId: client.id }, select: { id: true } });
+        for (const camp of clientCampaigns) {
+          const campaignSites = await tx.campaignSite.findMany({ where: { campaignId: camp.id }, select: { id: true } });
+          for (const cs of campaignSites) {
+            await tx.file.deleteMany({ where: { campaignSiteId: cs.id } });
+          }
+          await tx.campaignSite.deleteMany({ where: { campaignId: camp.id } });
+          await tx.file.deleteMany({ where: { campaignId: camp.id } });
+        }
+        const clientInvoices = await tx.invoice.findMany({ where: { clientId: client.id }, select: { id: true } });
+        for (const inv of clientInvoices) {
+          await tx.payment.deleteMany({ where: { invoiceId: inv.id } });
+          await tx.invoiceItem.deleteMany({ where: { invoiceId: inv.id } });
+          await tx.file.deleteMany({ where: { invoiceId: inv.id } });
+        }
+        await tx.invoice.deleteMany({ where: { clientId: client.id } });
+        await tx.campaign.deleteMany({ where: { clientId: client.id } });
+      }
+      if (demoClients.length > 0) {
+        await tx.client.deleteMany({ where: { orgId, name: { in: DEMO_CLIENT_NAMES, mode: 'insensitive' } } });
+        deleted.clients = demoClients.length;
+      }
+
+      // Delete demo sites
+      const demoSites = await tx.site.findMany({
+        where: { orgId, siteName: { in: DEMO_SITE_NAMES } },
+        select: { id: true }
+      });
+      for (const site of demoSites) {
+        await tx.file.deleteMany({ where: { siteId: site.id } });
+        await tx.invoiceItem.updateMany({ where: { siteId: site.id }, data: { siteId: null } });
+        const campaignSites = await tx.campaignSite.findMany({ where: { siteId: site.id }, select: { id: true } });
+        for (const cs of campaignSites) {
+          await tx.file.deleteMany({ where: { campaignSiteId: cs.id } });
+        }
+        await tx.campaignSite.deleteMany({ where: { siteId: site.id } });
+      }
+      if (demoSites.length > 0) {
+        await tx.site.deleteMany({ where: { orgId, siteName: { in: DEMO_SITE_NAMES } } });
+        deleted.sites = demoSites.length;
+      }
+    }, { timeout: 30000 });
+
+    const totalDeleted = Object.values(deleted).reduce((sum, n) => sum + n, 0);
+    if (totalDeleted === 0) {
+      return res.json({ message: 'No demo data found. Your data is already clean!', deleted });
+    }
+    res.json({ message: 'Demo data removed successfully', deleted });
+  } catch (error: any) {
+    console.error('Demo data cleanup error:', error);
+    res.status(500).json({ error: 'Failed to remove demo data', details: error.message });
+  }
+});
+
 export default router;

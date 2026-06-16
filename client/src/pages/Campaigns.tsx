@@ -1,8 +1,8 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { 
-  Plus, Search, Filter, Calendar, MapPin, 
-  ChevronRight, ArrowRight, Download, ArrowUp, ArrowDown,
-  Tag, Loader2
+  Plus, Search, Calendar, MapPin, 
+  ArrowRight, ArrowUp, ArrowDown,
+  Loader2, Trash2, AlertTriangle, X
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -18,6 +18,8 @@ const Campaigns: React.FC = () => {
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [isLoading, setIsLoading] = useState(true);
   const [campaigns, setCampaigns] = useState<any[]>([]);
+  const [deleteTarget, setDeleteTarget] = useState<any | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   useEffect(() => {
     fetchCampaigns();
@@ -33,6 +35,21 @@ const Campaigns: React.FC = () => {
       toast.error('Failed to load campaigns');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+    try {
+      setIsDeleting(true);
+      await api.delete(`/campaigns/${deleteTarget.id}`);
+      toast.success(`Campaign "${deleteTarget.campaignName}" deleted`);
+      setDeleteTarget(null);
+      fetchCampaigns();
+    } catch (error) {
+      toast.error('Failed to delete campaign');
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -175,10 +192,19 @@ const Campaigns: React.FC = () => {
                    </div>
                    <p className="text-[12px] font-medium text-text-muted">{camp.client?.name || 'No Client'}</p>
                 </div>
-                <div className="text-right">
-                   <div className="text-[14px] font-black text-text-primary">{camp.campaignSites?.length || 0}</div>
-                   <div className="text-[10px] text-text-muted uppercase tracking-tighter font-bold">Sites</div>
-                   <div className="text-[12px] font-bold text-accent-blue mt-1">₹{((camp.totalBudget || 0) / 100000).toFixed(1)}L</div>
+                <div className="flex items-start gap-4">
+                  <div className="text-right">
+                    <div className="text-[14px] font-black text-text-primary">{camp.campaignSites?.length || 0}</div>
+                    <div className="text-[10px] text-text-muted uppercase tracking-tighter font-bold">Sites</div>
+                    <div className="text-[12px] font-bold text-accent-blue mt-1">₹{((camp.totalBudget || 0) / 100000).toFixed(1)}L</div>
+                  </div>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setDeleteTarget(camp); }}
+                    className="opacity-0 group-hover:opacity-100 transition-opacity p-2 rounded-xl hover:bg-danger/10 hover:text-danger text-text-muted border border-transparent hover:border-danger/30"
+                    title="Delete campaign"
+                  >
+                    <Trash2 size={15} />
+                  </button>
                 </div>
               </div>
 
@@ -201,6 +227,71 @@ const Campaigns: React.FC = () => {
           ))}
         </AnimatePresence>
       </motion.div>
+
+      {/* Delete Confirmation Modal */}
+      <AnimatePresence>
+        {deleteTarget && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-bg-primary/90 backdrop-blur-md z-[200] flex items-center justify-center p-4"
+            onClick={() => !isDeleting && setDeleteTarget(null)}
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+              onClick={(e) => e.stopPropagation()}
+              className="bg-bg-surface border border-danger/30 rounded-3xl w-full max-w-md shadow-2xl shadow-danger/20 overflow-hidden"
+            >
+              <div className="p-6 border-b border-border flex justify-between items-center bg-bg-surface-2">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-danger/10 text-danger rounded-2xl flex items-center justify-center">
+                    <AlertTriangle size={20} />
+                  </div>
+                  <h2 className="text-[16px] font-black text-text-primary uppercase tracking-tight">Delete Campaign</h2>
+                </div>
+                <button onClick={() => setDeleteTarget(null)} disabled={isDeleting} className="p-2 hover:bg-bg-surface border border-transparent hover:border-border rounded-xl transition-colors">
+                  <X size={18} />
+                </button>
+              </div>
+              <div className="p-6 space-y-4">
+                <p className="text-[13px] text-text-muted leading-relaxed">
+                  You are about to permanently delete:
+                </p>
+                <div className="bg-danger/5 border border-danger/20 rounded-2xl p-4">
+                  <p className="text-[15px] font-black text-text-primary">{deleteTarget.campaignName}</p>
+                  <p className="text-[11px] text-text-muted mt-1">
+                    Client: {deleteTarget.client?.name || 'N/A'} · {deleteTarget.campaignSites?.length || 0} sites · {deleteTarget.status}
+                  </p>
+                </div>
+                <p className="text-[11px] text-danger font-bold uppercase tracking-wide">
+                  ⚠ This will also delete all campaign sites, linked invoices, and payments. This action cannot be undone.
+                </p>
+              </div>
+              <div className="p-6 pt-0 flex gap-3">
+                <button
+                  onClick={() => setDeleteTarget(null)}
+                  disabled={isDeleting}
+                  className="flex-1 btn-outline py-3 text-[12px] font-black uppercase tracking-wider"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleDelete}
+                  disabled={isDeleting}
+                  className="flex-1 bg-danger text-white rounded-xl py-3 text-[12px] font-black uppercase tracking-wider shadow-lg shadow-danger/30 hover:brightness-110 transition-all disabled:opacity-60 flex items-center justify-center gap-2"
+                >
+                  {isDeleting ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+                  {isDeleting ? 'Deleting...' : 'Yes, Delete'}
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };
